@@ -2,9 +2,9 @@
 
 Sistema web completo para control de producción, pedidos, movimientos reales, pagos y control básico de bodega para una panadería.
 
-## 🚀 Estado Actual del Proyecto
+##  Estado Actual del Proyecto
 
-### ✅ **Backend Django** - **COMPLETADO Y FUNCIONANDO**
+###  **Backend Django** 
 - **PostgreSQL 18** configurado y conectado
 - **17 modelos** implementados según especificaciones del PDF
 - **API REST completa** con Django REST Framework
@@ -13,7 +13,7 @@ Sistema web completo para control de producción, pedidos, movimientos reales, p
 - **Constraints PostgreSQL** implementados según lineamientos
 - **Cálculos automáticos**: venta = precio_cobrado × kilos, saldos, stock
 
-### ✅ **Frontend Angular** - **COMPLETADO Y FUNCIONANDO**
+###  **Frontend Angular** 
 - **Node.js v24.14.1** instalado y configurado
 - **Dependencias npm** instaladas (802 paquetes)
 - **Estructura de componentes** creada (8 componentes principales)
@@ -34,9 +34,9 @@ Sistema web completo para control de producción, pedidos, movimientos reales, p
 - Movimientos reales por jornada
 - Conteos físicos de bodega
 
-## 🚀 Comienzo Rápido
+##  Comienzo Rápido
 
-### ✅ **Sistema completo configurado y funcionando**
+###  **Sistema completo configurado y funcionando**
 
 #### **Opción 1: Usar scripts automatizados (recomendado)**
 
@@ -231,12 +231,4 @@ npm start
 - **Turnos**: Noche, Mañana, Tarde
 - **Distribución**: Repartidor 1, Repartidor 2, Retiro en panadería, Sala de ventas
 
-## Próximas Mejoras
-1. Dashboard con gráficos estadísticos
-2. Exportación de reportes a Excel/PDF
-3. Notificaciones y recordatorios
-4. Integración con sistemas de pago
-5. App móvil para repartidores
 
-## Licencia
-Proyecto académico - Uso educativo
