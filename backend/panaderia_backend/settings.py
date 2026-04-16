@@ -14,10 +14,14 @@ DEBUG = os.getenv('DEBUG', 'True') == 'True'
 
 # Get allowed hosts from environment
 allowed_hosts = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
-# Add Railway default domain if not present
-if 'RAILWAY_ENVIRONMENT' in os.environ and '*.railway.app' not in allowed_hosts:
-    allowed_hosts.append('*.railway.app')
 ALLOWED_HOSTS = [host.strip() for host in allowed_hosts if host.strip()]
+# Add the specific Railway public domain if the env var is available.
+# Django does not support wildcard entries in ALLOWED_HOSTS, so we use the
+# exact domain provided by Railway instead of the non-functional '*.railway.app'.
+if 'RAILWAY_PUBLIC_DOMAIN' in os.environ:
+    railway_public_domain = os.environ['RAILWAY_PUBLIC_DOMAIN'].strip()
+    if railway_public_domain and railway_public_domain not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append(railway_public_domain)
 # Always allow Railway's internal healthcheck domain so that Railway's
 # healthcheck service (which sends Host: healthcheck.railway.app) is never
 # rejected by Django's SecurityMiddleware with a 400 DisallowedHost error.
