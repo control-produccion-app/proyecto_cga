@@ -1,262 +1,155 @@
-# Sistema de Gestión de Panadería
+# Control de Producción y Gestión Alimenticia
 
-Sistema web completo para control de producción, pedidos, movimientos reales, pagos y control básico de bodega para una panadería.
+Sistema web para apoyar el control operativo de producción, pedidos, movimientos comerciales, saldos y bodega en una panadería o pequeño negocio alimenticio.
 
-##  Estado Actual del Proyecto
+## Descripción del proyecto
 
-###  **Backend Django** 
-- **PostgreSQL 18** configurado y conectado
-- **17 modelos** implementados según especificaciones del PDF
-- **API REST completa** con Django REST Framework
-- **Autenticación JWT** implementada
-- **Datos de prueba** creados (clientes, productos, pedidos, producción, etc.)
-- **Constraints PostgreSQL** implementados según lineamientos
-- **Cálculos automáticos**: venta = precio_cobrado × kilos, saldos, stock
+El proyecto busca reemplazar la dependencia de consolidación manual en planillas por una solución con base de datos relacional, backend API y frontend web. El foco es ordenar la operación diaria y disponer de información consultable para producción, despacho, clientes, saldos y control básico de insumos.
 
-###  **Frontend Angular** 
-- **Node.js v24.14.1** instalado y configurado
-- **Dependencias npm** instaladas (802 paquetes)
-- **Estructura de componentes** creada (8 componentes principales)
-- **Servicios API** configurados con interceptores JWT
-- **Routing** completo implementado
-- **Interfaz** con Bootstrap 5 lista
-- **Proxy configurado** para comunicación con backend
-- **Build exitoso** en modo desarrollo
+## Objetivo general
 
-###  **Datos de Prueba Incluidos**
-- 6 insumos de bodega (harina, azúcar, levadura, etc.)
-- 5 tipos de producción (pan corriente, integral, dulce, etc.)
-- 7 productos comerciales con precios
-- 5 clientes con RUT y descuentos
-- 7 jornadas diarias con producción
-- 20 movimientos de bodega
-- 10 pedidos con detalles
-- Movimientos reales por jornada
-- Conteos físicos de bodega
+Desarrollar una aplicación web que permita registrar, consultar y controlar información operativa del negocio, manteniendo trazabilidad diaria sobre producción, pedidos, movimientos y estado comercial de clientes.
 
-##  Comienzo Rápido
+## Arquitectura del sistema
 
-###  **Sistema completo configurado y funcionando**
+- **Base de datos:** PostgreSQL
+- **Backend:** Django + Django REST Framework
+- **Autenticación API:** JWT
+- **Frontend:** Angular
+- **Despliegue actual del backend:** Railway
+- **Despliegue previsto del frontend:** Vercel
 
-#### **Opción 1: Usar scripts automatizados (recomendado)**
+La arquitectura sigue un esquema de tres capas: el frontend consume la API del backend y el backend centraliza acceso a datos, validaciones y exposición de recursos.
 
-1. **Verificar sistema** (diagnóstico completo):
-   ```powershell
-   .\check-system.bat
-   ```
+## Módulos funcionales del sistema
 
-2. **Probar backend** (inicia, prueba y detiene automáticamente):
-   ```powershell
-   .\test-backend-quick.ps1
-   ```
+- **Producción:** registro y consulta de producción por jornada, turno y tipo.
+- **Bodega:** control de insumos, movimientos de entrada, salida y ajuste, y conteos físicos.
+- **Pedidos / despacho:** registro de pedidos, detalle de productos y distribución.
+- **Clientes / saldos:** información comercial del cliente y seguimiento básico de deuda o saldo.
+- **Reportes operativos:** endpoints de consulta para apoyo a control diario.
+- **Administración:** mantenimiento y revisión de datos mediante Django Admin.
 
-3. **Iniciar sistema completo**:
-   - **Backend Django** (en ventana CMD):
-     ```cmd
-     cd backend
-     venv\Scripts\activate.bat
-     python manage.py runserver
-     ```
-   - **Frontend Angular** (en PowerShell):
-     ```powershell
-     .\start-angular-background.ps1
-     ```
+## Estado técnico actual
 
-4. **Detener sistema completo**:
-   ```powershell
-   .\stop-system.ps1
-   ```
+### Backend
 
-#### **Opción 2: Ejecución manual**
+El backend está implementado en Django y expone:
 
-1. **Backend Django** (puerto 8000):
-   ```cmd
-   cd backend
-   venv\Scripts\activate.bat
-   python manage.py runserver
-   ```
+- panel de administración Django (`/admin/`)
+- API REST bajo `/api/`
+- endpoint de health check (`/api/health/`)
+- autenticación JWT (`/api/token/` y `/api/token/refresh/`)
 
-2. **Frontend Angular** (puerto 4200):
-   ```powershell
-   cd frontend
-   npm start
-   ```
+### Recursos principales expuestos por la API
 
-#### **Acceso inmediato:**
-- **Frontend Angular**: http://localhost:4200/
-- **Backend API**: http://localhost:8000/api/
-- **Admin Django**: http://localhost:8000/admin/
+- `turnos`
+- `distribuciones`
+- `insumos`
+- `tipos-produccion`
+- `jornadas`
+- `producciones`
+- `movimientos-bodega`
+- `conteos-bodega`
+- `clientes`
+- `productos`
+- `pedidos`
+- `detalles-pedido`
+- `movimientos`
+- `reportes`
 
-#### **Credenciales demo:**
-- **Usuario**: `admin`
-- **Contraseña**: `admin123`
+### Base de datos y modelo actual
 
-**Guía completa**: Consulta [GUIA_RAPIDA.md](GUIA_RAPIDA.md) para instrucciones detalladas paso a paso.
+El backend implementa modelos para las principales entidades operativas del sistema:
 
-## Stack Tecnológico
-- **Frontend**: Angular 17
-- **Backend**: Django 4.2 + Django REST Framework
-- **Base de Datos**: PostgreSQL
-- **Autenticación**: JWT (JSON Web Tokens)
+- Turno
+- Distribucion
+- Insumo
+- TipoProduccion
+- JornadaDiaria
+- Produccion
+- MovimientoBodega
+- ConteoBodega
+- Cliente
+- Producto
+- Pedido
+- DetallePedido
+- DetalleMovimiento
 
-## Estructura del Proyecto
-```
-panaderia_proyecto/
-├── backend/                 # Aplicación Django
-├── frontend/                # Aplicación Angular
-├── documentos_apoyo/        # Documentación
-└── README.md               # Este archivo
+Estos modelos cubren la operación base del proyecto: producción diaria, bodega, catálogo comercial, pedidos y movimientos asociados.
+
+## Estructura del repositorio
+
+```text
+proyecto_cga/
+├── backend/
+│   ├── api/
+│   ├── panaderia_backend/
+│   ├── manage.py
+│   └── requirements.txt
+├── frontend/
+├── documentos_apoyo/
+├── documento_lider_backend_frontend.md
+├── script_maestro_panaderia_v2(1).sql
+└── README.md
 ```
 
-## Instalación y Configuración
+## Backend desplegado
 
-### 1. Requisitos Previos
-- Python 3.8+ y pip
-- Node.js 18+ y npm
-- PostgreSQL 12+
-- Git (opcional)
+URL pública actual del backend:
 
-### 2. Configuración Backend
-```bash
-cd backend
-
-# Crear entorno virtual
-python -m venv venv
-
-# Activar entorno (Windows)
-venv\Scripts\activate
-
-# Instalar dependencias
-pip install -r requirements.txt
-
-# Configurar base de datos PostgreSQL
-# 1. Crear base de datos 'panaderia_db'
-# 2. Configurar .env (copiar .env.example)
-
-# Aplicar migraciones
-python manage.py makemigrations
-python manage.py migrate
-
-# Cargar datos iniciales
-python manage.py load_initial_data
-
-# Crear superusuario
-python manage.py createsuperuser
-
-# Ejecutar servidor
-python manage.py runserver
+```text
+https://proyectocga-production-2e12.up.railway.app
 ```
 
-### 3. Configuración Frontend
-```bash
-cd frontend
+Rutas técnicas relevantes:
 
-# Instalar dependencias
-npm install
+- `https://proyectocga-production-2e12.up.railway.app/admin/`
+- `https://proyectocga-production-2e12.up.railway.app/api/`
+- `https://proyectocga-production-2e12.up.railway.app/api/health/`
+- `https://proyectocga-production-2e12.up.railway.app/api/token/`
 
-# Ejecutar servidor de desarrollo
-npm start
-```
+## Estructura técnica del backend
 
-### 4. Acceso a la Aplicación
-- **Frontend**: http://localhost:4200
-- **Backend API**: http://localhost:8000
-- **Admin Django**: http://localhost:8000/admin
+Dentro de `backend/` el proyecto incluye:
 
-## Funcionalidades Implementadas
+- configuración principal Django
+- aplicación `api` con modelos, serializers, vistas y rutas
+- archivos de despliegue para Railway
+- dependencias Python declaradas en `requirements.txt`
+- comandos de gestión para carga de datos y soporte de prueba
 
-### Módulo Productivo
-- Registro de jornadas diarias
-- Control de turnos (Noche, Mañana, Tarde)
-- Tipos de producción (pan corriente, integral, masa dulce, etc.)
-- Registro de producción por jornada y turno
-- Control de insumos de bodega
-- Movimientos de bodega (entradas, salidas, ajustes)
-- Conteos físicos de bodega
+## Frontend
 
-### Módulo Comercial
-- Catálogo de clientes con RUT y descuentos
-- Canales de distribución (reparto, retiro, sala de ventas)
-- Catálogo de productos con precios sugeridos
-- Gestión de pedidos con detalles
-- Registro de movimientos reales del día
-- Cálculo automático de ventas (precio_cobrado × kilos)
-- Control de pagos y saldos
+El repositorio incluye una carpeta `frontend/` para la aplicación Angular. El frontend está pensado para consumir la API del backend y organizar la interfaz por módulos funcionales del sistema.
 
-### Características Técnicas
-- **API REST completa** con autenticación JWT
-- **Cálculos en tiempo real**: saldos, stock, ventas
-- **Constraints PostgreSQL** para validación de datos
-- **Interfaz responsive** con Bootstrap 5
-- **CORS configurado** para comunicación frontend-backend
-- **Admin Django** para gestión administrativa
+## Base de datos
 
-## Reglas de Negocio Implementadas
+El proyecto utiliza PostgreSQL como motor principal. En el repositorio también existe un script SQL maestro y documentación de apoyo para la estructura y contexto del sistema.
 
-### Precios y Descuentos
-- Precio sugerido por producto (editable)
-- Descuento por cliente (sugerido, editable por operador)
-- Precio final cobrado almacenado en cada transacción
+## Tecnologías principales
 
-### Ventas y Pagos
-- Venta calculada: `precio_cobrado × kilos` (no se almacena como campo)
-- Pago del día registrado en `cancelacion`
-- Saldo calculado por consultas: `sum(venta) - sum(pago)`
+- PostgreSQL
+- Python
+- Django
+- Angular
 
-### Bodega y Stock
-- Stock teórico calculado: `entradas - salidas ± ajustes`
-- Conteos físicos para comparación
-- Movimientos con jornada/turno opcionales
+## Componentes de soporte del backend
 
-## Endpoints API Principales
+- Django REST Framework para exponer la API REST
+- SimpleJWT para autenticación basada en tokens
+- psycopg2-binary para conexión con PostgreSQL
+- gunicorn para despliegue del backend
+- whitenoise para manejo de archivos estáticos
+- django-cors-headers para integración entre frontend y backend
+- dj-database-url para configuración de base de datos por entorno
+- python-dotenv para carga de variables de entorno en desarrollo
 
-### Autenticación
-- `POST /api/token/` - Obtener token JWT
-- `POST /api/token/refresh/` - Refrescar token
+### Base de datos
+- PostgreSQL
 
-### Recursos CRUD
-- `/api/clientes/` - Gestión de clientes
-- `/api/productos/` - Catálogo de productos
-- `/api/pedidos/` - Pedidos y detalles
-- `/api/movimientos/` - Movimientos diarios
-- `/api/producciones/` - Registro de producción
-- `/api/movimientos-bodega/` - Movimientos de bodega
-
-### Reportes Especiales
-- `GET /api/clientes/{id}/saldo/` - Saldo acumulado del cliente
-- `GET /api/movimientos/resumen_jornada/` - Resumen por jornada
-- `GET /api/reportes/stock_insumo/` - Stock teórico vs físico
-
-## Datos Iniciales
-- **Turnos**: Noche, Mañana, Tarde
-- **Distribución**: Repartidor 1, Repartidor 2, Retiro en panadería, Sala de ventas
+### Frontend
+- Angular
+- TypeScript
 
 
-<<<<<<< HEAD
-=======
- ## 📦 Despliegue en Producción
-
-El proyecto está configurado para despliegue en:
-- **Frontend**: Vercel (Angular estático)
-- **Backend**: Railway (Django + PostgreSQL)
-- **Base de datos**: PostgreSQL gestionada por Railway
-
-### Instrucciones completas:
-Consulta [DEPLOY.md](DEPLOY.md) para la guía paso a paso de despliegue.
-
-### Archivos de configuración preparados:
-- `backend/Procfile` - Configuración para Railway
-- `backend/runtime.txt` - Versión de Python
-- `backend/railway.json` - Configuración avanzada Railway
-- `frontend/vercel.json` - Proxy y configuración Vercel
-- `backend/.env.example` - Variables de entorno de ejemplo
-
-## 📞 Soporte
-
-- **Issues**: Reportar problemas en el repositorio
-- **Documentación**: Ver `DEPLOY.md` para despliegue
-- **Configuración**: Ver `GUIA_RAPIDA.md` para desarrollo local
-
-## Licencia
-Proyecto académico - Uso educativo
->>>>>>> 097d289 (Sistema completo para ser subido a vercel)
