@@ -1,8 +1,9 @@
 ﻿from datetime import date
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from django.db import connection
 from django.db.models import Sum
+from django.utils import timezone
 from django.utils.dateparse import parse_date
 
 from rest_framework import viewsets, status
@@ -17,6 +18,7 @@ from .models import (
     TipoProduccion,
     JornadaDiaria,
     Produccion,
+    CierreTurno,
     MovimientoBodega,
     ConteoBodega,
     Cliente,
@@ -35,6 +37,7 @@ from .serializers import (
     TipoProduccionSerializer,
     JornadaDiariaSerializer,
     ProduccionSerializer,
+    CierreTurnoSerializer,
     MovimientoBodegaSerializer,
     ConteoBodegaSerializer,
     ClienteSerializer,
@@ -60,7 +63,7 @@ ROLES_ADMIN = [ROL_ADMINISTRADOR]
 ROLES_OPERACION = [ROL_ADMINISTRADOR, ROL_ENCARGADO_TURNO]
 
 # =========================================================
-# CATÃLOGOS BASE
+# CATÁLOGOS BASE
 # =========================================================
 
 class TurnoViewSet(viewsets.ModelViewSet):
@@ -99,7 +102,7 @@ class ProductoViewSet(viewsets.ModelViewSet):
 
 
 # =========================================================
-# PRODUCCIÃ“N
+# PRODUCCIÓN
 # =========================================================
 
 class JornadaDiariaViewSet(viewsets.ModelViewSet):
@@ -114,6 +117,203 @@ class ProduccionViewSet(viewsets.ModelViewSet):
     serializer_class = ProduccionSerializer
     permission_classes = [IsAuthenticated, EstaAutenticadoLecturaORolEscritura]
     roles_escritura = ROLES_OPERACION
+
+
+class CierreTurnoViewSet(viewsets.ModelViewSet):
+    queryset = (
+        CierreTurno.objects
+        .select_related("id_jornada", "id_turno")
+        .all()
+        .order_by("-id_jornada__fecha", "id_turno__id_turno")
+    )
+    serializer_class = CierreTurnoSerializer
+    permission_classes = [IsAuthenticated, EstaAutenticadoLecturaORolEscritura]
+    roles_escritura = ROLES_OPERACION
+
+    TIPO_PAN_CORRIENTE = "Pan corriente"
+    TIPO_PAN_ESPECIAL = "Pan especial"
+
+    def _decimal_2(self, valor):
+        return Decimal(valor).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+    def _decimal_4(self, valor):
+        return Decimal(valor).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+
+    def _usuario_es_admin(self, request):
+        usuario = request.user
+
+        if not usuario or not usuario.is_authenticated:
+            return False
+
+        if usuario.is_superuser:
+            return True
+
+        return usuario.groups.filter(name=ROL_ADMINISTRADOR).exists()
+
+    def _respuesta_cierre_bloqueado(self):
+        return Response(
+            {
+                "detail": (
+                    "El cierre ya está cerrado y no se puede editar directamente. "
+                    "Debe reabrirse primero."
+                )
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    def _sumar_movimientos_pan_corriente(self, cierre, unidad_medida):
+        total = (
+            DetalleMovimiento.objects
+            .filter(
+                id_jornada=cierre.id_jornada,
+                id_turno=cierre.id_turno,
+                id_producto__id_tipo_produccion__nombre_tipo_produccion=self.TIPO_PAN_CORRIENTE,
+                unidad_medida=unidad_medida,
+            )
+            .aggregate(total=Sum("cantidad_entregada"))
+        )["total"]
+
+        return self._decimal_2(total or Decimal("0.00"))
+
+    def _sumar_quintales_cocidos(self, cierre):
+        total = (
+            Produccion.objects
+            .filter(
+                id_jornada=cierre.id_jornada,
+                id_turno=cierre.id_turno,
+                id_tipo_produccion__nombre_tipo_produccion__in=[
+                    self.TIPO_PAN_CORRIENTE,
+                    self.TIPO_PAN_ESPECIAL,
+                ],
+            )
+            .aggregate(total=Sum("quintales"))
+        )["total"]
+
+        return self._decimal_2(total or Decimal("0.00"))
+
+    def _calcular_snapshot(self, cierre):
+        kilos_directos = self._sumar_movimientos_pan_corriente(cierre, "KILO")
+        unidades_totales = self._sumar_movimientos_pan_corriente(cierre, "UNIDAD")
+        kilos_equivalentes = self._decimal_2(unidades_totales / Decimal("13"))
+        quintales_cocidos = self._sumar_quintales_cocidos(cierre)
+
+        kilos_totales = self._decimal_2(
+            kilos_directos
+            + kilos_equivalentes
+            + cierre.pan_especial_kg
+            + cierre.mostrador_kg
+            + cierre.raciones_kg
+            + cierre.ajuste_por_error_kg
+        )
+
+        rinde = Decimal("0.0000")
+        if quintales_cocidos > 0:
+            rinde = self._decimal_4(kilos_totales / quintales_cocidos)
+
+        return {
+            "quintales_cocidos": quintales_cocidos,
+            "kilos_directos": kilos_directos,
+            "unidades_totales": unidades_totales,
+            "kilos_equivalentes": kilos_equivalentes,
+            "kilos_totales": kilos_totales,
+            "rinde": rinde,
+        }
+
+    def update(self, request, *args, **kwargs):
+        cierre = self.get_object()
+
+        if cierre.estado == "CERRADO":
+            return self._respuesta_cierre_bloqueado()
+
+        return super().update(request, *args, **kwargs)
+
+    def partial_update(self, request, *args, **kwargs):
+        cierre = self.get_object()
+
+        if cierre.estado == "CERRADO":
+            return self._respuesta_cierre_bloqueado()
+
+        return super().partial_update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        cierre = self.get_object()
+
+        if cierre.estado == "CERRADO":
+            return self._respuesta_cierre_bloqueado()
+
+        return super().destroy(request, *args, **kwargs)
+
+    @action(detail=True, methods=["get"])
+    def vista_previa(self, request, pk=None):
+        cierre = self.get_object()
+        snapshot = self._calcular_snapshot(cierre)
+
+        respuesta = {
+            "id_cierre_turno": cierre.id_cierre_turno,
+            "estado": cierre.estado,
+            "jornada_fecha": cierre.id_jornada.fecha,
+            "turno_nombre": cierre.id_turno.nombre_turno,
+            "mostrador_kg": cierre.mostrador_kg,
+            "raciones_kg": cierre.raciones_kg,
+            "ajuste_por_error_kg": cierre.ajuste_por_error_kg,
+            "pan_especial_kg": cierre.pan_especial_kg,
+            "detalle_pan_especial": cierre.detalle_pan_especial,
+            "observacion": cierre.observacion,
+            **snapshot,
+        }
+
+        return Response(respuesta)
+
+    @action(detail=True, methods=["post"])
+    def cerrar(self, request, pk=None):
+        cierre = self.get_object()
+
+        if cierre.estado == "CERRADO":
+            return Response(
+                {"detail": "El cierre ya se encuentra cerrado."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        snapshot = self._calcular_snapshot(cierre)
+
+        cierre.quintales_cocidos = snapshot["quintales_cocidos"]
+        cierre.kilos_directos = snapshot["kilos_directos"]
+        cierre.unidades_totales = snapshot["unidades_totales"]
+        cierre.kilos_equivalentes = snapshot["kilos_equivalentes"]
+        cierre.kilos_totales = snapshot["kilos_totales"]
+        cierre.rinde = snapshot["rinde"]
+        cierre.estado = "CERRADO"
+        cierre.fecha_cierre = timezone.now()
+
+        cierre.full_clean()
+        cierre.save()
+
+        serializer = self.get_serializer(cierre)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=["post"])
+    def reabrir(self, request, pk=None):
+        cierre = self.get_object()
+
+        if not self._usuario_es_admin(request):
+            return Response(
+                {"detail": "Solo el Administrador puede reabrir un cierre."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        if cierre.estado != "CERRADO":
+            return Response(
+                {"detail": "Solo se pueden reabrir cierres en estado CERRADO."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        cierre.estado = "EN_PROCESO"
+        cierre.fecha_cierre = None
+        cierre.save(update_fields=["estado", "fecha_cierre"])
+
+        serializer = self.get_serializer(cierre)
+        return Response(serializer.data)
+
 
 # =========================================================
 # BODEGA
@@ -148,7 +348,7 @@ class ClienteViewSet(viewsets.ModelViewSet):
         self.roles_permitidos = ROLES_ADMIN
         if not EstaAutenticadoYConRol().has_permission(request, self):
             return Response(
-                {"detail": "No tiene permisos para acceder a este mÃ³dulo."},
+                {"detail": "No tiene permisos para acceder a este módulo."},
                 status=status.HTTP_403_FORBIDDEN,
             )
 
@@ -186,8 +386,6 @@ class ClienteViewSet(viewsets.ModelViewSet):
         })
 
 
-
-
 class PedidoViewSet(viewsets.ModelViewSet):
     queryset = Pedido.objects.all()
     serializer_class = PedidoSerializer
@@ -214,7 +412,7 @@ class DetalleMovimientoViewSet(viewsets.ModelViewSet):
 
         if not EstaAutenticadoYConRol().has_permission(request, self):
             return Response(
-                {"detail": "No tiene permisos para acceder a este mÃ³dulo."},
+                {"detail": "No tiene permisos para acceder a este módulo."},
                 status=status.HTTP_403_FORBIDDEN,
             )
 
@@ -321,6 +519,7 @@ class ReportesViewSet(viewsets.ViewSet):
             "diferencia": diferencia,
         })
 
+
 # =========================================================
 # USUARIO AUTENTICADO
 # =========================================================
@@ -340,6 +539,7 @@ def usuario_actual(request):
         "is_superuser": usuario.is_superuser,
         "roles": roles,
     })
+
 
 # =========================================================
 # HEALTH CHECK

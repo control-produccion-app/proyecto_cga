@@ -1,5 +1,6 @@
 ﻿from django.db import models
 from django.core.validators import MinValueValidator, MaxValueValidator
+from django.core.exceptions import ValidationError
 
 
 class Turno(models.Model):
@@ -104,13 +105,139 @@ class Produccion(models.Model):
     quintales = models.DecimalField(max_digits=10, decimal_places=2)
 
     def __str__(self):
-        return f"ProducciÃ³n {self.id_tipo_produccion} - {self.id_jornada.fecha}"
+        return f"Producción {self.id_tipo_produccion} - {self.id_jornada.fecha}"
 
     class Meta:
         db_table = "produccion"
         unique_together = ("id_jornada", "id_tipo_produccion", "id_turno")
         indexes = [
             models.Index(fields=["id_jornada"], name="idx_prod_jornada"),
+        ]
+
+
+class CierreTurno(models.Model):
+    ESTADO_CHOICES = [
+        ("EN_PROCESO", "En proceso"),
+        ("CERRADO", "Cerrado"),
+    ]
+
+    id_cierre_turno = models.AutoField(primary_key=True)
+    id_jornada = models.ForeignKey(
+        JornadaDiaria,
+        on_delete=models.CASCADE,
+        db_column="id_jornada",
+    )
+    id_turno = models.ForeignKey(
+        Turno,
+        on_delete=models.CASCADE,
+        db_column="id_turno",
+    )
+    estado = models.CharField(
+        max_length=15,
+        choices=ESTADO_CHOICES,
+        default="EN_PROCESO",
+    )
+    fecha_registro = models.DateTimeField(auto_now_add=True)
+    fecha_cierre = models.DateTimeField(null=True, blank=True)
+
+    mostrador_kg = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0,
+        validators=[MinValueValidator(0)],
+    )
+    raciones_kg = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0,
+        validators=[MinValueValidator(0)],
+    )
+    ajuste_por_error_kg = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0,
+    )
+    pan_especial_kg = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0,
+        validators=[MinValueValidator(0)],
+    )
+    detalle_pan_especial = models.TextField(null=True, blank=True)
+    observacion = models.TextField(null=True, blank=True)
+
+    quintales_cocidos = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0,
+        validators=[MinValueValidator(0)],
+    )
+    kilos_directos = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0,
+        validators=[MinValueValidator(0)],
+    )
+    unidades_totales = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0,
+        validators=[MinValueValidator(0)],
+    )
+    kilos_equivalentes = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0,
+        validators=[MinValueValidator(0)],
+    )
+    kilos_totales = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0,
+        validators=[MinValueValidator(0)],
+    )
+    rinde = models.DecimalField(
+        max_digits=10,
+        decimal_places=4,
+        default=0,
+        validators=[MinValueValidator(0)],
+    )
+
+    def __str__(self):
+        return f"Cierre {self.id_jornada.fecha} - {self.id_turno.nombre_turno}"
+
+    def clean(self):
+        if self.ajuste_por_error_kg != 0 and not self.observacion:
+            raise ValidationError({
+                "observacion": "La observación es obligatoria cuando existe ajuste por error."
+            })
+
+    class Meta:
+        db_table = "cierre_turno"
+        indexes = [
+            models.Index(fields=["id_jornada"], name="idx_ct_jornada"),
+            models.Index(fields=["id_turno"], name="idx_ct_turno"),
+            models.Index(fields=["estado"], name="idx_ct_estado"),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["id_jornada", "id_turno"],
+                name="unique_cierre_turno_jornada_turno",
+            ),
+            models.CheckConstraint(
+                check=models.Q(estado__in=["EN_PROCESO", "CERRADO"]),
+                name="check_cierre_turno_estado",
+            ),
+            models.CheckConstraint(
+                check=(
+                    models.Q(ajuste_por_error_kg=0)
+                    | (
+                        models.Q(observacion__isnull=False)
+                        & ~models.Q(observacion="")
+                    )
+                ),
+                name="check_cierre_turno_ajuste_observacion",
+            ),
         ]
 
 
@@ -344,6 +471,13 @@ class DetalleMovimiento(models.Model):
         on_delete=models.CASCADE,
         db_column="id_jornada",
     )
+    id_turno = models.ForeignKey(
+        Turno,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        db_column="id_turno",
+    )
     id_cliente = models.ForeignKey(
         Cliente,
         on_delete=models.CASCADE,
@@ -374,16 +508,16 @@ class DetalleMovimiento(models.Model):
         null=True,
         blank=True,
     )
-    cantidad_entregada = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    cantidad_entregada = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0,
+    )
     unidad_medida = models.CharField(
         max_length=10,
         choices=UNIDAD_MEDIDA_CHOICES,
         default="KILO",
     )
-
-
-
-
     cancelacion = models.DecimalField(
         max_digits=12,
         decimal_places=2,
@@ -392,9 +526,8 @@ class DetalleMovimiento(models.Model):
     )
 
     def __str__(self):
-        return f"Movimiento {self.id_cliente} - {self.id_jornada.fecha}"
-
-
+        turno = self.id_turno.nombre_turno if self.id_turno else "Sin turno"
+        return f"Movimiento {self.id_cliente} - {self.id_jornada.fecha} - {turno}"
 
     @property
     def venta_linea(self):
@@ -405,6 +538,7 @@ class DetalleMovimiento(models.Model):
         indexes = [
             models.Index(fields=["id_cliente"], name="idx_dm_cliente"),
             models.Index(fields=["id_jornada"], name="idx_dm_jornada"),
+            models.Index(fields=["id_turno"], name="idx_dm_turno"),
         ]
         constraints = [
             models.CheckConstraint(
