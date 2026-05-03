@@ -5,7 +5,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from django.conf import settings
 from django.contrib.auth import authenticate
 from django.db import connection, transaction
-from django.db.models import Sum
+from django.db.models import Q, Sum
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 
@@ -605,6 +605,174 @@ class DetalleMovimientoViewSet(viewsets.ModelViewSet):
 class ReportesViewSet(viewsets.ViewSet):
     permission_classes = [IsAuthenticated, EstaAutenticadoYConRol]
     roles_permitidos = ROLES_ADMIN
+
+    def _decimal_cero(self, valor):
+        return valor or Decimal("0.00")
+
+    def _calcular_venta_movimiento(self, movimiento):
+        precio = self._decimal_cero(movimiento.precio_cobrado)
+        cantidad = self._decimal_cero(movimiento.cantidad_entregada)
+        return precio * cantidad
+
+    def _calcular_pago_movimiento(self, movimiento):
+        return self._decimal_cero(movimiento.cancelacion)
+
+    def _calcular_saldo_movimiento(self, movimiento):
+        venta = self._calcular_venta_movimiento(movimiento)
+        pago = self._calcular_pago_movimiento(movimiento)
+        saldo = venta - pago
+
+        if saldo > 0:
+            return saldo
+
+        return Decimal("0.00")
+
+    def _obtener_fecha_dashboard(self, fecha_param):
+        if fecha_param:
+            fecha_parseada = parse_date(fecha_param)
+
+            if not fecha_parseada:
+                return None, Response(
+                    {"error": "fecha debe tener formato YYYY-MM-DD"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            return fecha_parseada, None
+
+        ultima_jornada = JornadaDiaria.objects.order_by("-fecha").first()
+
+        if ultima_jornada:
+            return ultima_jornada.fecha, None
+
+        return date.today(), None
+
+    def _calcular_stock_actual(self, insumo, fecha_consulta):
+        movimientos = (
+            MovimientoBodega.objects
+            .filter(
+                id_insumo=insumo,
+                fecha_movimiento__lte=fecha_consulta,
+            )
+            .aggregate(
+                entradas=Sum(
+                    "cantidad",
+                    filter=Q(tipo_movimiento="ENTRADA"),
+                ),
+                salidas=Sum(
+                    "cantidad",
+                    filter=Q(tipo_movimiento="SALIDA"),
+                ),
+                ajustes=Sum(
+                    "cantidad",
+                    filter=Q(tipo_movimiento="AJUSTE"),
+                ),
+            )
+        )
+
+        stock_base = self._decimal_cero(insumo.stock_sugerido_inicial)
+        entradas = self._decimal_cero(movimientos["entradas"])
+        salidas = self._decimal_cero(movimientos["salidas"])
+        ajustes = self._decimal_cero(movimientos["ajustes"])
+
+        return stock_base + entradas - salidas + ajustes
+
+    @action(detail=False, methods=["get"])
+    def dashboard(self, request):
+        fecha_param = request.query_params.get("fecha")
+        fecha_consulta, error_fecha = self._obtener_fecha_dashboard(fecha_param)
+
+        if error_fecha:
+            return error_fecha
+
+        jornada = JornadaDiaria.objects.filter(fecha=fecha_consulta).first()
+
+        movimientos_dia = DetalleMovimiento.objects.filter(
+            id_jornada__fecha=fecha_consulta
+        )
+
+        movimientos_globales = DetalleMovimiento.objects.all()
+
+        ventas_dia = Decimal("0.00")
+        pagos_dia = Decimal("0.00")
+        saldo_dia = Decimal("0.00")
+        pendientes_pago_dia = 0
+
+        for movimiento in movimientos_dia:
+            venta = self._calcular_venta_movimiento(movimiento)
+            pago = self._calcular_pago_movimiento(movimiento)
+            saldo = self._calcular_saldo_movimiento(movimiento)
+
+            ventas_dia += venta
+            pagos_dia += pago
+            saldo_dia += saldo
+
+            if saldo > 0:
+                pendientes_pago_dia += 1
+
+        ventas_total = Decimal("0.00")
+        pagos_total = Decimal("0.00")
+        saldo_pendiente_total = Decimal("0.00")
+        pendientes_pago_total = 0
+
+        for movimiento in movimientos_globales:
+            venta = self._calcular_venta_movimiento(movimiento)
+            pago = self._calcular_pago_movimiento(movimiento)
+            saldo = self._calcular_saldo_movimiento(movimiento)
+
+            ventas_total += venta
+            pagos_total += pago
+            saldo_pendiente_total += saldo
+
+            if saldo > 0:
+                pendientes_pago_total += 1
+
+        quintales_dia = Decimal("0.00")
+
+        if jornada:
+            quintales_dia = (
+                Produccion.objects
+                .filter(id_jornada=jornada)
+                .aggregate(total=Sum("quintales"))
+            )["total"] or Decimal("0.00")
+
+        stock_bajo = []
+
+        insumos = Insumo.objects.filter(activo="S").order_by("nombre_insumo")
+
+        for insumo in insumos:
+            stock_actual = self._calcular_stock_actual(insumo, fecha_consulta)
+
+            if stock_actual <= 0:
+                stock_bajo.append({
+                    "id_insumo": insumo.id_insumo,
+                    "nombre_insumo": insumo.nombre_insumo,
+                    "unidad_control": insumo.unidad_control,
+                    "stock_actual": stock_actual,
+                })
+
+        return Response({
+            "fecha": fecha_consulta,
+            "jornada_id": jornada.id_jornada if jornada else None,
+            "comercial_dia": {
+                "ventas_dia": ventas_dia,
+                "pagos_dia": pagos_dia,
+                "saldo_dia": saldo_dia,
+                "pendientes_pago_dia": pendientes_pago_dia,
+            },
+            "comercial_total": {
+                "ventas_total": ventas_total,
+                "pagos_total": pagos_total,
+                "saldo_pendiente_total": saldo_pendiente_total,
+                "pendientes_pago_total": pendientes_pago_total,
+            },
+            "produccion": {
+                "quintales_dia": quintales_dia,
+            },
+            "bodega": {
+                "items_stock_bajo": len(stock_bajo),
+                "stock_bajo": stock_bajo[:5],
+            },
+        })
 
     @action(detail=False, methods=["get"])
     def stock_insumo(self, request):
